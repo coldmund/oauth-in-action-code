@@ -8,7 +8,6 @@ var randomstring = require("randomstring");
 var __ = require('underscore');
 __.string = require('underscore.string');
 
-
 var app = express();
 
 app.engine('html', cons.underscore);
@@ -34,7 +33,7 @@ var protectedResource = 'http://localhost:9002/resource';
 
 var state = null;
 
-var access_token = '987tghjkiu6trfghjuytrghj';
+var access_token = '';
 var scope = null;
 var refresh_token = 'j2r3oj32r23rmasd98uhjrk2o3i';
 
@@ -43,11 +42,10 @@ app.get('/', function (req, res) {
 });
 
 app.get('/authorize', function(req, res){
-
 	access_token = null;
 	scope = null;
 	state = randomstring.generate();
-	
+
 	var authorizeUrl = buildUrl(authServer.authorizationEndpoint, {
 		response_type: 'code',
 		scope: client.scope,
@@ -55,19 +53,18 @@ app.get('/authorize', function(req, res){
 		redirect_uri: client.redirect_uris[0],
 		state: state
 	});
-	
+
 	console.log("redirect", authorizeUrl);
 	res.redirect(authorizeUrl);
 });
 
 app.get('/callback', function(req, res){
-	
 	if (req.query.error) {
 		// it's an error response, act accordingly
 		res.render('error', {error: req.query.error});
 		return;
 	}
-	
+
 	var resState = req.query.state;
 	if (resState != state) {
 		console.log('State DOES NOT MATCH: expected %s got %s', state, resState);
@@ -87,25 +84,25 @@ app.get('/callback', function(req, res){
 		'Authorization': 'Basic ' + encodeClientCredentials(client.client_id, client.client_secret)
 	};
 
-	var tokRes = request('POST', authServer.tokenEndpoint, 
-		{	
+	var tokRes = request('POST', authServer.tokenEndpoint,
+		{
 			body: form_data,
 			headers: headers
 		}
 	);
 
 	console.log('Requesting access token for code %s',code);
-	
+
 	if (tokRes.statusCode >= 200 && tokRes.statusCode < 300) {
 		var body = JSON.parse(tokRes.getBody());
-	
+
 		access_token = body.access_token;
 		console.log('Got access token: %s', access_token);
 		if (body.refresh_token) {
 			refresh_token = body.refresh_token;
 			console.log('Got refresh token: %s', refresh_token);
 		}
-		
+
 		scope = body.scope;
 		console.log('Got scope: %s', scope);
 
@@ -116,39 +113,67 @@ app.get('/callback', function(req, res){
 });
 
 app.get('/fetch_resource', function(req, res) {
-
 	console.log('Making request with access token %s', access_token);
-	
+
 	var headers = {
 		'Authorization': 'Bearer ' + access_token,
 		'Content-Type': 'application/x-www-form-urlencoded'
 	};
-	
+
 	var resource = request('POST', protectedResource,
 		{headers: headers}
 	);
-	
+
 	if (resource.statusCode >= 200 && resource.statusCode < 300) {
 		var body = JSON.parse(resource.getBody());
 		res.render('data', {resource: body});
 		return;
 	} else {
-		/*
-		 * Instead of always returning an error like we do here, refresh the access token if we have a refresh token
-		 */
-		console.log("resource status error code " + resource.statusCode);
-		res.render('error', {error: 'Unable to fetch resource. Status ' + resource.statusCode});
+		access_token = null;
+		if(refresh_token) {
+			refreshAccessToken(req, res);
+			return;
+		} else {
+			res.render('error', {error: resource.statusCode});
+			return;
+		}
 	}
-	
-	
 });
 
 var refreshAccessToken = function(req, res) {
+	var	form_data = qs.stringify({
+		grant_type: 'refresh_token',
+		refresh_token: refresh_token
+	});
+	var	headers = {
+		'Content-Type': 'application/x-www-form-urlencoded',
+		'Authorization': 'Basic ' + encodeClientCredentials(client.client_id, client.client_secret)
+	};
+	console.log('Refreshing token %s', refresh_token);
+	var	tokRes = request('POST', authServer.tokenEndpoint, {
+		body: form_data,
+		headers: headers
+	});
+	if(tokRes.statusCode >= 200 && tokRes.statusCode < 300) {
+		var	body = JSON.parse(tokRes.getBody());
 
-	/*
-	 * Use the refresh token to get a new access token
-	 */
-	
+		access_token = body.access_token;
+		console.log('Got access token: %s', access_token);
+		if(body.refresh_token) {
+			refresh_token = body.refresh_token;
+			console.log('Got refresh token: %s', refresh_token);
+		}
+		scope = body.scope;
+		console.log('Got scope: %s', scope);
+
+		res.redirect('/fetch_resource');
+		return;
+	} else {
+		console.log('No refresh token, asking the user to get a new access token');
+		refresh_token = null;
+		res.render('error', {error: 'Unable to refresh token.'});
+		return;
+	}
 };
 
 var buildUrl = function(base, options, hash) {
@@ -163,12 +188,12 @@ var buildUrl = function(base, options, hash) {
 	if (hash) {
 		newUrl.hash = hash;
 	}
-	
+
 	return url.format(newUrl);
 };
 
 var encodeClientCredentials = function(clientId, clientSecret) {
-	return new Buffer(querystring.escape(clientId) + ':' + querystring.escape(clientSecret)).toString('base64');
+	return Buffer.from(querystring.escape(clientId) + ':' + querystring.escape(clientSecret)).toString('base64');
 };
 
 app.use('/', express.static('files/client'));
@@ -178,4 +203,3 @@ var server = app.listen(9000, 'localhost', function () {
   var port = server.address().port;
   console.log('OAuth Client is listening at http://%s:%s', host, port);
 });
- 

@@ -23,24 +23,51 @@ var resource = {
 };
 
 var getAccessToken = function(req, res, next) {
-	/*
-	 * Scan for an access token on the incoming request.
-	 */
-	
+	var	inToken = null;
+	var	auth = req.headers['authorization'];
+	if(auth && auth.toLowerCase().indexOf('bearer') == 0) {
+		inToken = auth.slice('bearer '.length);
+	} else if(req.body && req.body.access_token) {
+		inToken = req.body.access_token;
+	} else if(req.query && req.query.access_token) {
+		inToken = req.query.access_token;
+	}
+
+	console.log('Incoming token: %s', inToken);
+	if(!inToken || inToken === 'null') {
+		console.log('inToken is null');
+		req.access_token = null;
+		next();
+		return;
+	}
+	nosql.find().make(function(filter) {
+		filter.where('access_token', '=', inToken);
+		filter.callback(function(err, token) {
+			if(token) {
+				console.log('We found a matching token: "%s"', inToken);
+			} else {
+				console.log('No matching token was found.');
+			}
+			req.access_token = token;
+			next();
+			return;
+		});
+	});
 };
 
 app.options('/resource', cors());
 
+app.all('*', getAccessToken);
 
 /*
  * Add the getAccessToken function to this handler
  */
-app.post("/resource", cors(), function(req, res){
-
-	/*
-	 * Check to see if the access token was found or not
-	 */
-	
+app.post("/resource", cors(), function(req, res) {
+	if (req.access_token) {
+		res.json(resource);
+	} else {
+		res.status(401).end();
+	}
 });
 
 var server = app.listen(9002, 'localhost', function () {
@@ -49,4 +76,4 @@ var server = app.listen(9002, 'localhost', function () {
 
   console.log('OAuth Resource Server is listening at http://%s:%s', host, port);
 });
- 
+

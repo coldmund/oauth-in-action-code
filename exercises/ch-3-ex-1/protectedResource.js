@@ -25,29 +25,45 @@ var getAccessToken = function(req, res, next) {
 	// check the auth header first
 	var auth = req.headers['authorization'];
 	var inToken = null;
-	if (auth && auth.toLowerCase().indexOf('bearer') == 0) {
-		inToken = auth.slice('bearer '.length);
+	if (auth && auth.indexOf('Bearer') == 0) {
+		inToken = auth.slice('Bearer '.length);
 	} else if (req.body && req.body.access_token) {
 		// not in the header, check in the form body
 		inToken = req.body.access_token;
 	} else if (req.query && req.query.access_token) {
 		inToken = req.query.access_token
 	}
-	
+
 	console.log('Incoming token: %s', inToken);
-	nosql.one(function(token) {
-		if (token.access_token == inToken) {
-			return token;	
-		}
-	}, function(err, token) {
-		if (token) {
-			console.log("We found a matching token: %s", inToken);
-		} else {
-			console.log('No matching token was found.');
-		}
-		req.access_token = token;
-		next();
-		return;
+	// comment out the original code for node.js 8.0(or below) and nosql 3.0.3
+	// and insert new code for node.js 10 and nosql 6.1.0
+	// refer to https://github.com/oauthinaction/oauth-in-action-code/issues/18
+	// nosql.one(function(token) {
+	// 	if (token.access_token == inToken) {
+	// 		return token;
+	// 	}
+	// }, function(err, token) {
+	// 	if (token) {
+	// 		console.log("We found a matching token: %s", inToken);
+	// 	} else {
+	// 		console.log('No matching token was found.');
+	// 	}
+	// 	req.access_token = token;
+	// 	next();
+	// 	return;
+	// });
+	nosql.find().make(function(filter) {
+		filter.where('access_token', '=', inToken);
+		filter.callback(function(err, token) {
+			if(token) {
+				console.log('We found a matching token: %s', inToken);
+			} else {
+				console.log('No matching token was found.');
+			}
+			req.access_token = token;
+			next();
+			return;
+		});
 	});
 };
 
@@ -59,7 +75,7 @@ app.post("/resource", cors(), getAccessToken, function(req, res){
 	} else {
 		res.status(401).end();
 	}
-	
+
 });
 
 var server = app.listen(9002, 'localhost', function () {
@@ -68,4 +84,4 @@ var server = app.listen(9002, 'localhost', function () {
 
   console.log('OAuth Resource Server is listening at http://%s:%s', host, port);
 });
- 
+

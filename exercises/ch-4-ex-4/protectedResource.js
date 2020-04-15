@@ -32,21 +32,20 @@ var getAccessToken = function(req, res, next) {
 	} else if (req.query && req.query.access_token) {
 		inToken = req.query.access_token
 	}
-	
+
 	console.log('Incoming token: %s', inToken);
-	nosql.one(function(token) {
-		if (token.access_token == inToken) {
-			return token;	
-		}
-	}, function(err, token) {
-		if (token) {
-			console.log("We found a matching token: %s", inToken);
-		} else {
-			console.log('No matching token was found.');
-		}
-		req.access_token = token;
-		next();
-		return;
+	nosql.find().make(function(filter) {
+		filter.where('access_token', '=', inToken);
+		filter.callback(function(err, token) {
+			if(token) {
+				console.log('We found a matching token: "%s"', inToken);
+			} else {
+				console.log('No matching token was found.');
+			}
+			req.access_token = token[0];
+			next();
+			return;
+		});
 	});
 };
 
@@ -71,14 +70,34 @@ var bobFavorites = {
 };
 
 app.get('/favorites', getAccessToken, requireAccessToken, function(req, res) {
-	
-	/*
-	 * Get different user information based on the information of who approved the token
-	 */
-	
-	var unknown = {user: 'Unknown', favorites: {movies: [], foods: [], music: []}};
-	res.json(unknown);
-
+	fav = {user: 'Unknown', favorites: {movies: [], foods: [], music: []}};
+	if(req.access_token.user == 'alice') {
+		fav.user = 'Alice';
+		if(__.contains(req.access_token.scope, 'movies')) {
+			fav.favorites.movies = aliceFavorites.movies;
+		}
+		if(__.contains(req.access_token.scope, 'foods')) {
+			fav.favorites.foods = aliceFavorites.foods;
+		}
+		if(__.contains(req.access_token.scope, 'music')) {
+			fav.favorites.music = aliceFavorites.music;
+		}
+		res.json(fav);
+	} else if(req.access_token.user == 'bob') {
+		fav.user = 'Bob';
+		if(__.contains(req.access_token.scope, 'movies')) {
+			fav.favorites.movies = bobFavorites.movies;
+		}
+		if(__.contains(req.access_token.scope, 'foods')) {
+			fav.favorites.foods = bobFavorites.foods;
+		}
+		if(__.contains(req.access_token.scope, 'music')) {
+			fav.favorites.music = bobFavorites.music;
+		}
+		res.json(fav);
+	} else {
+		res.json(fav);
+	}
 });
 
 var server = app.listen(9002, 'localhost', function () {
@@ -87,4 +106,3 @@ var server = app.listen(9002, 'localhost', function () {
 
   console.log('OAuth Resource Server is listening at http://%s:%s', host, port);
 });
- 

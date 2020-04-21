@@ -26,10 +26,11 @@ var authServer = {
 
 // client information
 var clients = [
-
-  /*
-   * Enter client information here
-   */
+	{
+		"client_id": "oauth-client-1",
+		"client_secret": "oauth-client-secret-1",
+		"redirect_uris": ["http://localhost:9000/callback"]
+	}
 ];
 
 var codes = {};
@@ -45,27 +46,116 @@ app.get('/', function(req, res) {
 });
 
 app.get("/authorize", function(req, res){
-	
-	/*
-	 * Process the request, validate the client, and send the user to the approval page
-	 */
-	
+	var	client = getClient(req.query.client_id);
+	if(!client) {
+		console.log('Unknown client %s', req.query.client_id);
+		res.render('error', {error: 'Unknown client'});
+		return;
+	} else if(!__.contains(client.redirect_uris, req.query.redirect_uri)) {
+		console.log('Mismatched redirect URI, expected %s got %s');
+		res.render('error', {error: 'Invalid redirect URI'});
+		return;
+	} else {
+		var	reqid = randomstring.generate(8);
+		requests[reqid] = req.query;
+		res.render('approve', {client: client, reqid: reqid});
+		return;
+	}
 });
 
 app.post('/approve', function(req, res) {
+	var	reqid = req.body.reqid;
+	var	query = requests[reqid];
+	if(!query) {
+		res.render('error', {error: 'No matching authorization request'});
+		return;
+	}
+	delete	requests[reqid];
 
-	/*
-	 * Process the results of the approval page, authorize the client
-	 */
-	
+	if(req.body.approve) {
+		if(query.response_type == 'code') {
+			var	code = randomstring.generate(8);
+			codes[code] = {request:query};
+			var	urlParsed = buildUrl(query.redirect_uri, {
+				code: code,
+				state: query.state
+			});
+			res.redirect(urlParsed);
+			return;
+		} else {
+			var	urlParsed = buildUrl(query.redirect_uri, {
+				error: 'unsupported_response_type'
+			});
+			res.redirect(urlParsed);
+			return;
+		}
+	} else {
+		var	urlParsed = buildUrl(query.redirect_uri, {
+			error: 'access_denied'
+		});
+		res.redirect(urlParsed);
+		return;
+	}
 });
 
-app.post("/token", function(req, res){
+app.post("/token", function(req, res) {
+	var	auth = req.headers['authorization'];
+	if(auth) {
+		var	clientCredentials = decodeClientCredentials(auth);
+		var	clientId = clientCredentials.id;
+		var	clientSecret = clientCredentials.secret;
+	}
 
-	/*
-	 * Process the request, issue an access token
-	 */
+	if(req.body.client_id) {
+		if(clientId) {
+			console.log('Client attempted to authenticate with multiple methods');
+			res.status(401).json({error: 'invalid_client'});
+			return;
+		}
+		var	clientId = req.body.client_id;
+		var	clientSecret = req.body.client_secret;
+	}
 
+	var	client = getClient(clientId);
+	if(!client) {
+		console.log('Unknown client %s', clientId);
+		res.status(401).json({error: 'invalid_client'});
+		return;
+	}
+
+	if(client.client_secret != clientSecret) {
+		console.log('Mismatched client secret, expected %s got %s', client.client_secret, clientSecret);
+		res.status(401).json({error: 'invalid_client'});
+		return;
+	}
+
+	if(req.body.grant_type == 'authorization_code') {
+		var	code = codes[req.body.code];
+		if(code) {
+			delete	codes[req.body.code];
+			if(code.request.client_id == clientId) {
+				var	access_token = randomstring.generate();
+				nosql.insert({ access_token: access_token, client_id: clientId });
+				console.log('Issuing access token %s', access_token);
+				var	token_response = { access_token: access_token, token_type: 'Bearer'};
+				res.status(200).json(token_response);
+				console.log('Issued tokens for code %s', req.body.code);
+				return;
+			} else {
+				console.log('Client mismatch, expected %s get %s', code.request.client_id, clientId);
+				res.status(400).json({error: 'invalid_grant'});
+				return;
+			}
+		} else {
+			console.log('Unknown code %s', req.body.code);
+			res.status(400).json({error: 'invalid_grant'});
+			return;
+		}
+	} else {
+		console.log('Unknown grant type %s', req.body.grant_type);
+		res.status(400).json({error: 'unsupported_grant_type'});
+		return;
+	}
 });
 
 var buildUrl = function(base, options, hash) {
@@ -80,14 +170,14 @@ var buildUrl = function(base, options, hash) {
 	if (hash) {
 		newUrl.hash = hash;
 	}
-	
+
 	return url.format(newUrl);
 };
 
 var decodeClientCredentials = function(auth) {
-	var clientCredentials = new Buffer(auth.slice('basic '.length), 'base64').toString().split(':');
+	var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64').toString().split(':');
 	var clientId = querystring.unescape(clientCredentials[0]);
-	var clientSecret = querystring.unescape(clientCredentials[1]);	
+	var clientSecret = querystring.unescape(clientCredentials[1]);
 	return { id: clientId, secret: clientSecret };
 };
 
@@ -102,4 +192,4 @@ var server = app.listen(9001, 'localhost', function () {
 
   console.log('OAuth Authorization Server is listening at http://%s:%s', host, port);
 });
- 
+

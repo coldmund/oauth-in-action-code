@@ -33,21 +33,20 @@ var getAccessToken = function(req, res, next) {
 	} else if (req.query && req.query.access_token) {
 		inToken = req.query.access_token
 	}
-	
+
 	console.log('Incoming token: %s', inToken);
-	nosql.one(function(token) {
-		if (token.access_token == inToken) {
-			return token;	
-		}
-	}, function(err, token) {
-		if (token) {
-			console.log("We found a matching token: %s", inToken);
-		} else {
-			console.log('No matching token was found.');
-		}
-		req.access_token = token;
-		next();
-		return;
+	nosql.find().make(function(filter) {
+		filter.where('access_token', '=', inToken);
+		filter.callback(function(err, token) {
+			if(token) {
+				console.log('We found a matching token: "%s"', inToken);
+			} else {
+				console.log('No matching token was found.');
+			}
+			req.access_token = token[0];
+			next();
+			return;
+		});
 	});
 };
 
@@ -68,7 +67,7 @@ app.post("/resource", cors(), getAccessToken, function(req, res){
 	} else {
 		res.status(401).end();
 	}
-	
+
 });
 
 var server = app.listen(9002, 'localhost', function () {
@@ -77,4 +76,4 @@ var server = app.listen(9002, 'localhost', function () {
 
   console.log('OAuth Resource Server is listening at http://%s:%s', host, port);
 });
- 
+

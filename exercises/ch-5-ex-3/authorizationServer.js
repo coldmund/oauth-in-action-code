@@ -30,7 +30,8 @@ var clients = [
 	{
 		"client_id": "oauth-client-1",
 		"client_secret": "oauth-client-secret-1",
-		"redirect_uris": ["http://localhost:9000/callback"]
+		"redirect_uris": ["http://localhost:9000/callback"],
+		"scope": "foo bar"
 
 		/*
 		 * Add a set of allowed scopes for this client
@@ -52,9 +53,9 @@ app.get('/', function(req, res) {
 });
 
 app.get("/authorize", function(req, res){
-	
+
 	var client = getClient(req.query.client_id);
-	
+
 	if (!client) {
 		console.log('Unknown client %s', req.query.client_id);
 		res.render('error', {error: 'Unknown client'});
@@ -64,20 +65,29 @@ app.get("/authorize", function(req, res){
 		res.render('error', {error: 'Invalid redirect URI'});
 		return;
 	} else {
-		
+
 		/*
-		 * Validate that the set of scopes the client is requesting 
+		 * Validate that the set of scopes the client is requesting
 		 * aligns with the set of scopes the client is registered for.
 		 */
-		
+		var	rscope = req.query.scope ? req.query.scope.split(' ') : undefined;
+		var	cscope = client.scope ? client.scope.split(' ') : undefined;
+		if(__.difference(rscope, cscope).length > 0) {
+			var	urlParsed = buildUrl(req.query.redirect_rui, {
+				error: 'invalid_scope'
+			});
+			res.redirect(urlParsed);
+			return;
+		}
+
 		var reqid = randomstring.generate(8);
-		
+
 		requests[reqid] = req.query;
-		
+
 		/*
 		 * Send the requested scopes to the approval page for rendering
 		 */
-		res.render('approve', {client: client, reqid: reqid });
+		res.render('approve', {client: client, reqid: reqid, scope: rscope });
 		return;
 	}
 
@@ -94,26 +104,26 @@ app.post('/approve', function(req, res) {
 		res.render('error', {error: 'No matching authorization request'});
 		return;
 	}
-	
+
 	if (req.body.approve) {
 		if (query.response_type == 'code') {
 			// user approved access
-
-			/*
-			 * Make sure the approved scopes from the form are allowed for this client
-			 */
-
+			var	rscope = getScopesFromForm(req.body);
+			var	client = getClient(query.client_id);
+			var	cscope = client.scope ? client.scope.split(' ') : undefined;
+			if(__.difference(rscope, cscope).length > 0) {
+				var	urlParsed = buildUrl(query.redirect_uri, {
+					error: 'invalid_scope'
+				});
+				res.redirect(urlParsed);
+				return;
+			}
 
 			var code = randomstring.generate(8);
-			
+
 			// save the code and request for later
-			
-			/*
-			 * Save the approved scopes as part of this object
-			 */
-			
-			codes[code] = { request: query };
-		
+			codes[code] = { request: query , scope: rscope};
+
 			var urlParsed = buildUrl(query.redirect_uri, {
 				code: code,
 				state: query.state
@@ -136,11 +146,10 @@ app.post('/approve', function(req, res) {
 		res.redirect(urlParsed);
 		return;
 	}
-	
 });
 
 app.post("/token", function(req, res){
-	
+
 	var auth = req.headers['authorization'];
 	if (auth) {
 		// check the auth header
@@ -148,7 +157,7 @@ app.post("/token", function(req, res){
 		var clientId = clientCredentials.id;
 		var clientSecret = clientCredentials.secret;
 	}
-	
+
 	// otherwise, check the post body
 	if (req.body.client_id) {
 		if (clientId) {
@@ -157,28 +166,28 @@ app.post("/token", function(req, res){
 			res.status(401).json({error: 'invalid_client'});
 			return;
 		}
-		
+
 		var clientId = req.body.client_id;
 		var clientSecret = req.body.client_secret;
 	}
-	
+
 	var client = getClient(clientId);
 	if (!client) {
 		console.log('Unknown client %s', clientId);
 		res.status(401).json({error: 'invalid_client'});
 		return;
 	}
-	
+
 	if (client.client_secret != clientSecret) {
 		console.log('Mismatched client secret, expected %s got %s', client.client_secret, clientSecret);
 		res.status(401).json({error: 'invalid_client'});
 		return;
 	}
-	
+
 	if (req.body.grant_type == 'authorization_code') {
-		
+
 		var code = codes[req.body.code];
-		
+
 		if (code) {
 			delete codes[req.body.code]; // burn our code, it's been used
 			if (code.request.client_id == clientId) {
@@ -190,27 +199,28 @@ app.post("/token", function(req, res){
 				var access_token = randomstring.generate();
 				var refresh_token = randomstring.generate();
 
-				nosql.insert({ access_token: access_token, client_id: clientId });
-				nosql.insert({ refresh_token: refresh_token, client_id: clientId });
+				nosql.insert({ access_token: access_token, client_id: clientId, scope: code.scope });
+				nosql.insert({ refresh_token: refresh_token, client_id: clientId, scope: code.scope });
 
 				console.log('Issuing access token %s', access_token);
 
 				/*
 				 * Return scopes as part of the token response
 				 */
-				
-				var token_response = { access_token: access_token, token_type: 'Bearer',  refresh_token: refresh_token };
+
+				var token_response = { access_token: access_token, token_type: 'Bearer',
+					refresh_token: refresh_token, scope: code.scope.join(' ') };
 
 				res.status(200).json(token_response);
 				console.log('Issued tokens for code %s', req.body.code);
-				
+
 				return;
 			} else {
 				console.log('Client mismatch, expected %s got %s', code.request.client_id, clientId);
 				res.status(400).json({error: 'invalid_grant'});
 				return;
 			}
-		
+
 
 		} else {
 			console.log('Unknown code, %s', req.body.code);
@@ -218,33 +228,33 @@ app.post("/token", function(req, res){
 			return;
 		}
 	} else if (req.body.grant_type == 'refresh_token') {
-		nosql.one(function(token) {
-			if (token.refresh_token == req.body.refresh_token) {
-				return token;	
-			}
-		}, function(err, token) {
-			if (token) {
-				console.log("We found a matching refresh token: %s", req.body.refresh_token);
-				if (token.client_id != clientId) {
-					nosql.remove(function(found) { return (found == token); }, function () {} );
+		nosql.find().make(function(filter) {
+			filter.where('refresh_token', '=', req.body.refresh_token);
+			filter.callback(function(err, tokens) {
+				if(tokens && tokens.length > 0) {
+					token = tokens[0]
+					console.log('We found a matching refresh token: %s', req.body.refresh_token);
+					if(token.client_id != clientId) {
+						nosql.remove(function(found) { return (found == token); }, function () {});
+						res.status(400).json({error: 'invalid_grant'});
+						return;
+					}
+
+					/*
+					* Bonus: handle scopes for a refresh token request appropriately
+					*/
+
+					var	access_token = randomstring.generate();
+					nosql.insert({ access_token: access_token, client_id: clientId });
+					var	token_response = { access_token: access_token, token_type: 'Bearer', refresh_token: token.refresh_token };
+					res.status(200).json(token_response);
+					return;
+				} else {
+					console.log('No matching token was found.');
 					res.status(400).json({error: 'invalid_grant'});
 					return;
 				}
-				
-				/*
-				 * Bonus: handle scopes for a refresh token request appropriately
-				 */
-				
-				var access_token = randomstring.generate();
-				nosql.insert({ access_token: access_token, client_id: clientId });
-				var token_response = { access_token: access_token, token_type: 'Bearer',  refresh_token: token.refresh_token };
-				res.status(200).json(token_response);
-				return;
-			} else {
-				console.log('No matching token was found.');
-				res.status(400).json({error: 'invalid_grant'});
-				return;
-			}
+			});
 		});
 	} else {
 		console.log('Unknown grant type %s', req.body.grant_type);
@@ -264,14 +274,14 @@ var buildUrl = function(base, options, hash) {
 	if (hash) {
 		newUrl.hash = hash;
 	}
-	
+
 	return url.format(newUrl);
 };
 
 var decodeClientCredentials = function(auth) {
-	var clientCredentials = new Buffer(auth.slice('basic '.length), 'base64').toString().split(':');
+	var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64').toString().split(':');
 	var clientId = querystring.unescape(clientCredentials[0]);
-	var clientSecret = querystring.unescape(clientCredentials[1]);	
+	var clientSecret = querystring.unescape(clientCredentials[1]);
 	return { id: clientId, secret: clientSecret };
 };
 
@@ -291,4 +301,4 @@ var server = app.listen(9001, 'localhost', function () {
 
   console.log('OAuth Authorization Server is listening at http://%s:%s', host, port);
 });
- 
+

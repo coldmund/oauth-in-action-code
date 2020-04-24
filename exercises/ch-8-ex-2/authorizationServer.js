@@ -76,7 +76,7 @@ var userInfo = {
 		"email": "alice.wonderland@example.com",
 		"email_verified": true
 	},
-	
+
 	"bob": {
 		"sub": "1ZT5-OE63-57383B",
 		"preferred_username": "bob",
@@ -93,7 +93,7 @@ var userInfo = {
 		"email_verified": true,
 		"username" : "clewis",
 		"password" : "user password!"
- 	}	
+ 	}
 };
 
 var codes = {};
@@ -118,9 +118,9 @@ app.get('/', function(req, res) {
 });
 
 app.get("/authorize", function(req, res){
-	
+
 	var client = getClient(req.query.client_id);
-	
+
 	if (!client) {
 		console.log('Unknown client %s', req.query.client_id);
 		res.render('error', {error: 'Unknown client'});
@@ -130,7 +130,7 @@ app.get("/authorize", function(req, res){
 		res.render('error', {error: 'Invalid redirect URI'});
 		return;
 	} else {
-		
+
 		var rscope = req.query.scope ? req.query.scope.split(' ') : undefined;
 		var cscope = client.scope ? client.scope.split(' ') : undefined;
 		if (__.difference(rscope, cscope).length > 0) {
@@ -142,11 +142,11 @@ app.get("/authorize", function(req, res){
 			res.redirect(url.format(urlParsed));
 			return;
 		}
-		
+
 		var reqid = randomstring.generate(8);
-		
+
 		requests[reqid] = req.query;
-		
+
 		res.render('approve', {client: client, reqid: reqid, scope: rscope});
 		return;
 	}
@@ -164,14 +164,14 @@ app.post('/approve', function(req, res) {
 		res.render('error', {error: 'No matching authorization request'});
 		return;
 	}
-	
+
 	if (req.body.approve) {
 		if (query.response_type == 'code') {
 			// user approved access
 			var code = randomstring.generate(8);
-			
+
 			var user = req.body.user;
-		
+
 			var scope = __.filter(__.keys(req.body), function(s) { return __.string.startsWith(s, 'scope_'); })
 				.map(function(s) { return s.slice('scope_'.length); });
 			var client = getClient(query.client_id);
@@ -188,17 +188,17 @@ app.post('/approve', function(req, res) {
 
 			// save the code and request for later
 			codes[code] = { authorizationEndpointRequest: query, scope: scope, user: user };
-		
+
 			var urlParsed =url.parse(query.redirect_uri);
 			delete urlParsed.search; // this is a weird behavior of the URL library
 			urlParsed.query = urlParsed.query || {};
 			urlParsed.query.code = code;
-			urlParsed.query.state = query.state; 
+			urlParsed.query.state = query.state;
 			res.redirect(url.format(urlParsed));
 			return;
 		} else if (query.response_type == 'token') {
 			var user = req.body.user;
-		
+
 			var scope = __.filter(__.keys(req.body), function(s) { return __.string.startsWith(s, 'scope_'); })
 				.map(function(s) { return s.slice('scope_'.length); });
 			var client = getClient(query.client_id);
@@ -214,21 +214,21 @@ app.post('/approve', function(req, res) {
 			}
 
 			var user = userInfo[user];
-			if (!user) {		
+			if (!user) {
 				console.log('Unknown user %s', user)
 				res.status(500).render('error', {error: 'Unknown user ' + user});
 				return;
 			}
-	
+
 			console.log("User %j", user);
 
-			var token_response = generateTokens(req, res, query.clientId, user, cscope);		
+			var token_response = generateTokens(req, res, query.clientId, user, cscope);
 
 			var urlParsed = url.parse(query.redirect_uri);
 			delete urlParsed.search; // this is a weird behavior of the URL library
 			if (query.state) {
 				token_response.state = query.state;
-			} 				
+			}
 			urlParsed.hash = qs.stringify(token_response);
 			res.redirect(url.format(urlParsed));
 			return;
@@ -251,7 +251,7 @@ app.post('/approve', function(req, res) {
 		res.redirect(url.format(urlParsed));
 		return;
 	}
-	
+
 });
 
 var generateTokens = function (req, res, clientId, user, scope, nonce, generateRefreshToken) {
@@ -260,8 +260,8 @@ var generateTokens = function (req, res, clientId, user, scope, nonce, generateR
 	var refresh_token = null;
 
 	if (generateRefreshToken) {
-		refresh_token = randomstring.generate();	
-	}	
+		refresh_token = randomstring.generate();
+	}
 
 	/*
 	var header = { 'typ': 'JWT', 'alg': 'RS256', 'kid': 'authserver'};
@@ -287,13 +287,13 @@ var generateTokens = function (req, res, clientId, user, scope, nonce, generateR
 	*/
 
 	var header = { 'typ': 'JWT', 'alg': 'RS256', 'kid': 'authserver'};
-	
+
 	var payload = {};
 	payload.iss = 'http://localhost:9001/';
 	payload.sub = user.sub;
 	payload.aud = clientId;
 	payload.iat = Math.floor(Date.now() / 1000);
-	payload.exp = Math.floor(Date.now() / 1000) + (5 * 60);	
+	payload.exp = Math.floor(Date.now() / 1000) + (5 * 60);
 
 	if (nonce) {
 		payload.nonce = nonce;
@@ -309,7 +309,7 @@ var generateTokens = function (req, res, clientId, user, scope, nonce, generateR
 	if (refresh_token) {
 		nosql.insert({ refresh_token: refresh_token, client_id: clientId, scope: scope, user: user });
 	}
-	
+
 	console.log('Issuing access token %s', access_token);
 	if (refresh_token) {
 		console.log('and refresh token %s', refresh_token);
@@ -328,15 +328,15 @@ var generateTokens = function (req, res, clientId, user, scope, nonce, generateR
 };
 
 app.post("/token", function(req, res){
-	
+
 	var auth = req.headers['authorization'];
 	if (auth) {
 		// check the auth header
-		var clientCredentials = new Buffer(auth.slice('basic '.length), 'base64').toString().split(':');
+		var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64').toString().split(':');
 		var clientId = querystring.unescape(clientCredentials[0]);
 		var clientSecret = querystring.unescape(clientCredentials[1]);
 	}
-	
+
 	// otherwise, check the post body
 	if (req.body.client_id) {
 		if (clientId) {
@@ -345,45 +345,45 @@ app.post("/token", function(req, res){
 			res.status(401).json({error: 'invalid_client'});
 			return;
 		}
-		
+
 		var clientId = req.body.client_id;
 		var clientSecret = req.body.client_secret;
 	}
-	
+
 	var client = getClient(clientId);
 	if (!client) {
 		console.log('Unknown client %s', clientId);
 		res.status(401).json({error: 'invalid_client'});
 		return;
 	}
-	
+
 	if (client.client_secret != clientSecret) {
 		console.log('Mismatched client secret, expected %s got %s', client.client_secret, clientSecret);
 		res.status(401).json({error: 'invalid_client'});
 		return;
 	}
-	
+
 	if (req.body.grant_type == 'authorization_code') {
-		
+
 		var code = codes[req.body.code];
-		
+
 		if (code) {
 			delete codes[req.body.code]; // burn our code, it's been used
 			if (code.authorizationEndpointRequest.client_id == clientId) {
 
 				var user = userInfo[code.user];
-				if (!user) {		
+				if (!user) {
 					console.log('Unknown user %s', user)
 					res.status(500).render('error', {error: 'Unknown user ' + code.user});
 					return;
-				}	
+				}
 				console.log("User %j", user);
 
 				var token_response = generateTokens(req, res, clientId, user, code.scope, code.authorizationEndpointRequest.nonce, true);
 
 				res.status(200).json(token_response);
 				console.log('Issued tokens for code %s', req.body.code);
-				
+
 				return;
 			} else {
 				console.log('Client mismatch, expected %s got %s', code.authorizationEndpointRequest.client_id, clientId);
@@ -410,8 +410,8 @@ app.post("/token", function(req, res){
 		nosql.insert({ access_token: access_token, client_id: clientId, scope: scope });
 		console.log('Issuing access token %s', access_token);
 		res.status(200).json(token_response);
-		return;	
-		
+		return;
+
 	} else if (req.body.grant_type == 'refresh_token') {
 		nosql.all(function(token) {
 			return (token.refresh_token == req.body.refresh_token);
@@ -445,7 +445,7 @@ app.post("/token", function(req, res){
 			return;
 		}
 		console.log("user is %j ", user)
-		
+
 		var password = req.body.password;
 		if (user.password != password) {
 			console.log('Mismatched resource owner password, expected %s got %s', user.password, password);
@@ -456,8 +456,8 @@ app.post("/token", function(req, res){
 		var scope = req.body.scope;
 
 		var token_response = generateTokens(req, res, clientId, user, scope);
-		
-		res.status(200).json(token_response);		
+
+		res.status(200).json(token_response);
 		return;
 	} else {
 		console.log('Unknown grant type %s', req.body.grant_type);
@@ -469,11 +469,11 @@ app.post('/revoke', function(req, res) {
 	var auth = req.headers['authorization'];
 	if (auth) {
 		// check the auth header
-		var clientCredentials = new Buffer(auth.slice('basic '.length), 'base64').toString().split(':');
+		var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64').toString().split(':');
 		var clientId = querystring.unescape(clientCredentials[0]);
 		var clientSecret = querystring.unescape(clientCredentials[1]);
 	}
-	
+
 	// otherwise, check the post body
 	if (req.body.client_id) {
 		if (clientId) {
@@ -482,40 +482,40 @@ app.post('/revoke', function(req, res) {
 			res.status(401).json({error: 'invalid_client'});
 			return;
 		}
-		
+
 		var clientId = req.body.client_id;
 		var clientSecret = req.body.client_secret;
 	}
-	
+
 	var client = getClient(clientId);
 	if (!client) {
 		console.log('Unknown client %s', clientId);
 		res.status(401).json({error: 'invalid_client'});
 		return;
 	}
-	
+
 	if (client.client_secret != clientSecret) {
 		console.log('Mismatched client secret, expected %s got %s', client.client_secret, clientSecret);
 		res.status(401).json({error: 'invalid_client'});
 		return;
 	}
-	
+
 	var inToken = req.body.token;
 	nosql.remove(function(token) {
 		if (token.access_token == inToken && token.client_id == clientId) {
-			return true;	
+			return true;
 		}
 	}, function(err, count) {
 		console.log("Removed %s tokens", count);
 		res.status(204).end();
 		return;
 	});
-	
+
 });
 
 app.post('/introspect', function(req, res) {
 	var auth = req.headers['authorization'];
-	var resourceCredentials = new Buffer(auth.slice('basic '.length), 'base64').toString().split(':');
+	var resourceCredentials = Buffer.from(auth.slice('basic '.length), 'base64').toString().split(':');
 	var resourceId = querystring.unescape(resourceCredentials[0]);
 	var resourceSecret = querystring.unescape(resourceCredentials[1]);
 
@@ -525,59 +525,58 @@ app.post('/introspect', function(req, res) {
 		res.status(401).end();
 		return;
 	}
-	
+
 	if (resource.resource_secret != resourceSecret) {
 		console.log('Mismatched secret, expected %s got %s', resource.resource_secret, resourceSecret);
 		res.status(401).end();
 		return;
 	}
-	
+
 	var inToken = req.body.token;
 	console.log('Introspecting token %s', inToken);
-	nosql.one(function(token) {
-		if (token.access_token == inToken) {
-			return token;	
-		}
-	}, function(err, token) {
-		if (token) {
-			console.log("We found a matching token: %s", inToken);
-			
-			var introspectionResponse = {};
-			introspectionResponse.active = true;
-			introspectionResponse.iss = 'http://localhost:9001/';
-			introspectionResponse.sub = token.user;
-			introspectionResponse.scope = token.scope.join(' ');
-			introspectionResponse.client_id = token.client_id;
-						
-			res.status(200).json(introspectionResponse);
-			return;
-		} else {
-			console.log('No matching token was found.');
+	nosql.find().make(function(filter) {
+		filter.where('access_token', '=', inToken);
+		filter.callback(function(err, tokens) {
+			if(tokens && tokens.length > 0)
+				token = tokens[0];
+			if (token) {
+				console.log("We found a matching token: %s", inToken);
 
-			var introspectionResponse = {};
-			introspectionResponse.active = false;
-			res.status(200).json(introspectionResponse);
-			return;
-		}
+				var introspectionResponse = {};
+				introspectionResponse.active = true;
+				introspectionResponse.iss = 'http://localhost:9001/';
+				introspectionResponse.sub = token.user;
+				introspectionResponse.scope = token.scope.join(' ');
+				introspectionResponse.client_id = token.client_id;
+
+				res.status(200).json(introspectionResponse);
+				return;
+			} else {
+				console.log('No matching token was found.');
+
+				var introspectionResponse = {};
+				introspectionResponse.active = false;
+				res.status(200).json(introspectionResponse);
+				return;
+			}
+		});
 	});
-	
-	
 });
 
 var checkClientMetadata = function (req, res) {
 	var reg = {};
 
 	if (!req.body.token_endpoint_auth_method) {
-		reg.token_endpoint_auth_method = 'secret_basic';	
+		reg.token_endpoint_auth_method = 'secret_basic';
 	} else {
 		reg.token_endpoint_auth_method = req.body.token_endpoint_auth_method;
 	}
-	
+
 	if (!__.contains(['secret_basic', 'secret_post', 'none'], reg.token_endpoint_auth_method)) {
 		res.status(400).json({error: 'invalid_client_metadata'});
 		return;
 	}
-	
+
 	if (!req.body.grant_types) {
 		if (!req.body.response_types) {
 			reg.grant_types = ['authorization_code'];
@@ -622,23 +621,23 @@ var checkClientMetadata = function (req, res) {
 	} else {
 		reg.redirect_uris = req.body.redirect_uris;
 	}
-	
+
 	if (typeof(req.body.client_name) == 'string') {
 		reg.client_name = req.body.client_name;
 	}
-	
+
 	if (typeof(req.body.client_uri) == 'string') {
 		reg.client_uri = req.body.client_uri;
 	}
-	
+
 	if (typeof(req.body.logo_uri) == 'string') {
 		reg.logo_uri = req.body.logo_uri;
 	}
-	
+
 	if (typeof(req.body.scope) == 'string') {
 		reg.scope = req.body.scope;
 	}
-	
+
 	return reg;
 };
 
@@ -661,7 +660,7 @@ app.post('/register', function (req, res){
 	reg.registration_client_uri = 'http://localhost:9001/register/' + reg.client_id;
 
 	clients.push(reg);
-	
+
 	res.status(201).json(reg);
 	return;
 });
@@ -686,7 +685,7 @@ var validateConfigurationEndpointRequest = function (req, res, next) {
 			res.status(403).end();
 			return;
 		}
-		
+
 	} else {
 		res.status(401).end();
 		return;
@@ -704,7 +703,7 @@ app.put('/register/:clientId', validateConfigurationEndpointRequest, function(re
 		res.status(400).json({error: 'invalid_client_metadata'});
 		return;
 	}
-	
+
 	if (req.body.client_secret && req.body.client_secret != client.client_secret) {
 		res.status(400).json({error: 'invalid_client_metadata'});
 	}
@@ -722,7 +721,7 @@ app.put('/register/:clientId', validateConfigurationEndpointRequest, function(re
 	});
 
 	res.status(200).json(client);
-	
+
 });
 
 app.delete('/register/:clientId', validateConfigurationEndpointRequest, function(req, res) {
@@ -730,16 +729,16 @@ app.delete('/register/:clientId', validateConfigurationEndpointRequest, function
 
 	nosql.remove(function(token) {
 		if (token.client_id == clientId) {
-			return true;	
+			return true;
 		}
 	}, function(err, count) {
 		console.log("Removed %s tokens", count);
 	});
-	
+
 	res.status(204).end();
 	return;
 
-	
+
 });
 
 var getAccessToken = function(req, res, next) {
@@ -754,21 +753,20 @@ var getAccessToken = function(req, res, next) {
 	} else if (req.query && req.query.access_token) {
 		inToken = req.query.access_token
 	}
-	
+
 	console.log('Incoming token: %s', inToken);
-	nosql.one(function(token) {
-		if (token.access_token == inToken) {
-			return token;	
-		}
-	}, function(err, token) {
-		if (token) {
-			console.log("We found a matching token: %s", inToken);
-		} else {
-			console.log('No matching token was found.');
-		}
-		req.access_token = token;
-		next();
-		return;
+	nosql.find().make(function(filter) {
+		filter.where('access_token', '=', inToken);
+		filter.callback(function(err, tokens) {
+			if (token) {
+				console.log("We found a matching token: %s", inToken);
+			} else {
+				console.log('No matching token was found.');
+			}
+			req.access_token = token;
+			next();
+			return;
+		});
 	});
 };
 
@@ -781,18 +779,18 @@ var requireAccessToken = function(req, res, next) {
 };
 
 var userInfoEndpoint = function(req, res) {
-	
+
 	if (!__.contains(req.access_token.scope, 'openid')) {
 		res.status(403).end();
 		return;
 	}
-	
+
 	var user = userInfo[req.access_token.user];
 	if (!user) {
 		res.status(404).end();
 		return;
 	}
-	
+
 	var out = {};
 	__.each(req.access_token.scope, function (scope) {
 		if (scope == 'openid') {
@@ -827,7 +825,7 @@ var userInfoEndpoint = function(req, res) {
 			});
 		}
 	});
-	
+
 	res.status(200).json(out);
 	return;
 };
@@ -846,4 +844,4 @@ var server = app.listen(9001, 'localhost', function () {
 
   console.log('OAuth Authorization Server is listening at http://%s:%s', host, port);
 });
- 
+

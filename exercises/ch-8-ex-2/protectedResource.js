@@ -10,6 +10,7 @@ var request = require("sync-request");
 var __ = require('underscore');
 var base64url = require('base64url');
 var jose = require('jsrsasign');
+var	cors = require('cors');
 
 var app = express();
 
@@ -59,21 +60,22 @@ var getAccessToken = function(req, res, next) {
 	} else if (req.query && req.query.access_token) {
 		inToken = req.query.access_token
 	}
-	
+
 	console.log('Incoming token: %s', inToken);
-	nosql.one(function(token) {
-		if (token.access_token == inToken) {
-			return token;	
-		}
-	}, function(err, token) {
-		if (token) {
-			console.log("We found a matching token: %s", inToken);
-		} else {
-			console.log('No matching token was found.');
-		}
-		req.access_token = token;
-		next();
-		return;
+	nosql.find().make(function(filter) {
+		filter.where('access_token', '=', inToken);
+		filter.callback(function(err, tokens) {
+			if(tokens && tokens.length > 0)
+				token = tokens[0];
+			if (token) {
+				console.log("We found a matching token: %s", inToken);
+			} else {
+				console.log('No matching token was found.');
+			}
+			req.access_token = token;
+			next();
+			return;
+		});
 	});
 };
 
@@ -83,13 +85,15 @@ var requireAccessToken = function(req, res, next) {
 	} else {
 		res.status(401).end();
 	}
-}; 
+};
 
+app.options('/helloWorld', cors());
 app.get("/helloWorld", getAccessToken, function(req, res){
 	if (req.access_token) {
-		
+
 		res.setHeader('X-Content-Type-Options','nosniff');
 		res.setHeader('X-XSS-Protection', '1; mode=block');
+		res.setHeader('Access-Control-Allow-Origin', '*');
 
 		var resource = {
 			"greeting" : ""
@@ -110,7 +114,6 @@ app.get("/helloWorld", getAccessToken, function(req, res){
 		}
 		res.json(resource);
 	}
-	
 });
 
 var server = app.listen(9002, 'localhost', function () {
@@ -119,4 +122,4 @@ var server = app.listen(9002, 'localhost', function () {
 
   console.log('OAuth Resource Server is listening at http://%s:%s', host, port);
 });
- 
+

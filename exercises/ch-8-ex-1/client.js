@@ -72,12 +72,12 @@ app.get('/authorize', function(req, res){
 			return;
 		}
 	}
-	
+
 	access_token = null;
 	refresh_token = null;
 	scope = null;
 	state = randomstring.generate();
-	
+
 	var authorizeUrl = url.parse(authServer.authorizationEndpoint, true);
 	delete authorizeUrl.search; // this is to get around odd behavior in the node URL library
 	authorizeUrl.query.response_type = 'code';
@@ -85,13 +85,13 @@ app.get('/authorize', function(req, res){
 	authorizeUrl.query.client_id = client.client_id;
 	authorizeUrl.query.redirect_uri = client.redirect_uris[0];
 	authorizeUrl.query.state = state;
-	
+
 	console.log("redirect", url.format(authorizeUrl));
 	res.redirect(url.format(authorizeUrl));
 });
 
 var registerClient = function() {
-	
+
 	var template = {
 		client_name: 'OAuth in Action Dynamic Test Client',
 		client_uri: 'http://localhost:9000/',
@@ -106,14 +106,14 @@ var registerClient = function() {
 		'Content-Type': 'application/json',
 		'Accept': 'application/json'
 	};
-	
-	var regRes = request('POST', authServer.registrationEndpoint, 
+
+	var regRes = request('POST', authServer.registrationEndpoint,
 		{
 			body: JSON.stringify(template),
 			headers: headers
 		}
 	);
-	
+
 	if (regRes.statusCode == 201) {
 		var body = JSON.parse(regRes.getBody());
 		console.log("Got registered client", body);
@@ -124,13 +124,13 @@ var registerClient = function() {
 };
 
 app.get("/callback", function(req, res){
-	
+
 	if (req.query.error) {
 		// it's an error response, act accordingly
 		res.render('error', {error: req.query.error});
 		return;
 	}
-	
+
 	var resState = req.query.state;
 	if (resState == state) {
 		console.log('State value matches: expected %s got %s', state, resState);
@@ -151,31 +151,31 @@ app.get("/callback", function(req, res){
 			});
 	var headers = {
 		'Content-Type': 'application/x-www-form-urlencoded',
-		'Authorization': 'Basic ' + new Buffer(querystring.escape(client.client_id) + ':' + querystring.escape(client.client_secret)).toString('base64')
+		'Authorization': 'Basic ' + Buffer.from(querystring.escape(client.client_id) + ':' + querystring.escape(client.client_secret)).toString('base64')
 	};
 
-	var tokRes = request('POST', authServer.tokenEndpoint, 
-		{	
+	var tokRes = request('POST', authServer.tokenEndpoint,
+		{
 			body: form_data,
 			headers: headers
 		}
 	);
 
 	console.log('Requesting access token for code %s',code);
-	
+
 	if (tokRes.statusCode >= 200 && tokRes.statusCode < 300) {
 		var body = JSON.parse(tokRes.getBody());
-	
+
 		access_token = body.access_token;
 		console.log('Got access token: %s', access_token);
 		if (body.refresh_token) {
 			refresh_token = body.refresh_token;
 			console.log('Got refresh token: %s', refresh_token);
 		}
-		
+
 		if (body.id_token) {
 			console.log('Got ID token: %s', body.id_token);
-			
+
 			// check the id token
 			var pubKey = jose.KEYUTIL.getKey(rsaKey);
 			var signatureValid = jose.jws.JWS.verify(body.id_token, pubKey, ['RS256']);
@@ -186,33 +186,33 @@ app.get("/callback", function(req, res){
 				console.log('Payload', payload);
 				if (payload.iss == 'http://localhost:9001/') {
 					console.log('issuer OK');
-					if ((Array.isArray(payload.aud) && _.contains(payload.aud, client.client_id)) || 
+					if ((Array.isArray(payload.aud) && _.contains(payload.aud, client.client_id)) ||
 						payload.aud == client.client_id) {
 						console.log('Audience OK');
-				
+
 						var now = Math.floor(Date.now() / 1000);
-				
+
 						if (payload.iat <= now) {
 							console.log('issued-at OK');
 							if (payload.exp >= now) {
 								console.log('expiration OK');
-						
+
 								console.log('Token valid!');
-		
+
 								id_token = payload;
-						
+
 							}
 						}
 					}
-			
+
 				}
-			
+
 
 			}
-			
-			
+
+
 		}
-		
+
 		scope = body.scope;
 		console.log('Got scope: %s', scope);
 
@@ -234,8 +234,8 @@ var refreshAccessToken = function(req, res) {
 		'Content-Type': 'application/x-www-form-urlencoded'
 	};
 	console.log('Refreshing token %s', refresh_token);
-	var tokRes = request('POST', authServer.tokenEndpoint, 
-		{	
+	var tokRes = request('POST', authServer.tokenEndpoint,
+		{
 			body: form_data,
 			headers: headers
 		}
@@ -251,7 +251,7 @@ var refreshAccessToken = function(req, res) {
 		}
 		scope = body.scope;
 		console.log('Got scope: %s', scope);
-	
+
 		// try again
 		res.redirect('/fetch_resource');
 		return;
@@ -275,20 +275,20 @@ app.get('/fetch_resource', function(req, res) {
 			return;
 		}
 	}
-	
+
 	console.log('Making request with access token %s', access_token);
-	
+
 	var headers = {
 		'Authorization': 'Bearer ' + access_token,
 		'Content-Type': 'application/x-www-form-urlencoded'
 	};
-	
+
 	var protectedResourceEndpoint = protectedResource+"?language="+req.query.language;
 	console.log("protectedResourceEndpoint %s", protectedResourceEndpoint);
 	var resource = request('GET', protectedResourceEndpoint,
 		{headers: headers}
 	);
-	
+
 	if (resource.statusCode >= 200 && resource.statusCode < 300) {
 		var body = resource.getBody();
 		res.render('data', {resource: body});
@@ -304,8 +304,8 @@ app.get('/fetch_resource', function(req, res) {
 			return;
 		}
 	}
-	
-	
+
+
 });
 
 app.get('/revoke', function(req, res) {
@@ -318,20 +318,20 @@ app.post('/revoke', function(req, res) {
 	});
 	var headers = {
 		'Content-Type': 'application/x-www-form-urlencoded',
- 		'Authorization': 'Basic ' + new Buffer(querystring.escape(client.client_id) + ':' + querystring.escape(client.client_secret)).toString('base64')
+ 		'Authorization': 'Basic ' + Buffer.from(querystring.escape(client.client_id) + ':' + querystring.escape(client.client_secret)).toString('base64')
 	};
 	console.log('Revoking token %s', access_token);
-	var tokRes = request('POST', authServer.revocationEndpoint, 
+	var tokRes = request('POST', authServer.revocationEndpoint,
 		{
 			body: form_data,
 			headers: headers
 		}
 	);
-	
+
 	access_token = null;
 	refresh_token = null;
 	scope = null;
-	
+
 	if (tokRes.statusCode >= 200 && tokRes.statusCode < 300) {
 		res.render('revoke', {access_token: access_token, refresh_token: refresh_token, scope: scope});
 		return;
@@ -342,27 +342,27 @@ app.post('/revoke', function(req, res) {
 });
 
 app.get('/userinfo', function(req, res) {
-	
+
 	var headers = {
 		'Authorization': 'Bearer ' + access_token
 	};
-	
+
 	var resource = request('GET', authServer.userInfoEndpoint,
 		{headers: headers}
 	);
 	if (resource.statusCode >= 200 && resource.statusCode < 300) {
 		var body = JSON.parse(resource.getBody());
 		console.log('Got data: ', body);
-	
+
 		userInfo = body;
-	
+
 		res.render('userinfo', {userInfo: userInfo, id_token: id_token});
 		return;
 	} else {
 		res.render('error', {error: 'Unable to fetch user information'});
 		return;
 	}
-	
+
 });
 
 app.get('/username_password', function(req, res) {
@@ -371,10 +371,10 @@ app.get('/username_password', function(req, res) {
 });
 
 app.post('/username_password', function(req, res) {
-	
+
 	var username = req.body.username;
 	var password = req.body.password;
-	
+
 	var form_data = qs.stringify({
 				grant_type: 'password',
 				username: username,
@@ -382,17 +382,17 @@ app.post('/username_password', function(req, res) {
 			});
 	var headers = {
 		'Content-Type': 'application/x-www-form-urlencoded',
-		'Authorization': 'Basic ' + new Buffer(querystring.escape(client.client_id) + ':' + querystring.escape(client.client_secret)).toString('base64')
+		'Authorization': 'Basic ' + Buffer.from(querystring.escape(client.client_id) + ':' + querystring.escape(client.client_secret)).toString('base64')
 	};
 
-	var tokRes = request('POST', authServer.tokenEndpoint, 
-		{	
+	var tokRes = request('POST', authServer.tokenEndpoint,
+		{
 			body: form_data,
 			headers: headers
 		}
 	);
-	
-	
+
+
 });
 
 app.use('/', express.static('files/client'));
@@ -402,4 +402,4 @@ var server = app.listen(9000, 'localhost', function () {
   var port = server.address().port;
   console.log('OAuth Client is listening at http://%s:%s', host, port);
 });
- 
+
